@@ -5,8 +5,8 @@ class Controller{
 		float Ki;
 		float Kd;
 		float Kp;
-		float time;   //time between measurements
 	protected:
+		float time;   //time between measurements
 		Controller(float i, float d, float p, float t): Ki(i), Kd(d), Kp(p), time(t){}
 		double SumE;
 		double ep;
