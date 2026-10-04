@@ -1,6 +1,6 @@
 // Motor.h -- his motor physics, without the PID/Controller part
 #pragma once
-#include <cmath>
+#include <bits/stdc++.h>
 
 class motor {
 private:
