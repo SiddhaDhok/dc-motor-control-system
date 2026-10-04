@@ -25,10 +25,9 @@ class motor: public Controller{
 	private:
 		double speed;
 		double inertia;
-		double f(double sp, double pow);
 		double SR(double x){
 			if (x>=0) return sqrt(x);
-			return 0-sqrt(-x);
+			return sqrt(-x);
 		}
 		double NewSpeed(double P){
 			double NS2;
@@ -52,9 +51,3 @@ class motor: public Controller{
 		double GetSpeed(){ return speed;}
 		double GetInertia(){ return inertia;}
 };
-
-int main(){
-	motor m(50, 1, 0.1, 0.5, 1);
-	m.ChangeSpeed(20);
-	return 0;
-}
