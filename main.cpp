@@ -1,32 +1,26 @@
-#include<iostream>
-#include "motor.h"
-#include "controller.h"
-#include "CSVOutput.h"
+#include "MotorController.h"
+#include "output.h"
 using namespace std;
 
-int main()
-{
-    double target=0; //target speed
-    double dt=0; //step
-    double totalTime=0 //duration of simulation
-    double loadStartTime=0 //time when disturbance starts
-    double loadValue=0 //disturbance size
+int main() {
+    double target, inertia, Kp, Ki, Kd, dt;
+    cout<<"Enter target speed: ";
+    cin>>target;
+    cout<<"Enter motor inertia: ";
+    cin>>inertia;
+    cout<<"Enter Kp, Ki, Kd (space-separated): ";
+    cin>>Kp>>Ki>>Kd;
+    cout<<"Enter time step dt (e.g. 0.01): ";
+    cin>>dt;
 
-    Motor motor;
-    Controller controller; // Kp/Ki/Kd  inside Controller's constructor
-    CSVOutput output("simulation_res.csv");
-    int steps=static_cast<int>(totalTime/dt);
-    for(int i=0; i<=steps; i++)
-    {
-        double t=i*dt;
-        if(t>=loadStartTime)
-        {
-            motor.setLoad(loadValue);
-        }
-        double speed=motor.getSpeed();
-        double power=controller.step(target, speed, dt);
-        motor.update(power, dt);
-        output.record(t, target, speed, power);
-    }
+    motor m(inertia, Kp, Ki, Kd, dt);
+    CSVOutput csv("sim_results.csv");
+    SimulationResult result;
+
+    m.ChangeSpeed(target, csv, result);
+
+    cout<<"\nSimulation complete. Final speed: "<<m.GetSpeed()<<endl;
+    result.print();
+
     return 0;
 }
