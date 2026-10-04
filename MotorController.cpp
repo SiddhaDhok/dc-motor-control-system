@@ -36,6 +36,7 @@ class motor: public Controller{
 			double s2=speed*speed;
 			double DE=(2*P*time)/inertia;
 			NS2=s2+DE;
+			if (NS2<0) return 0;
 			return SR(NS2);
 		}
 	public:
