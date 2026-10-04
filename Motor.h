@@ -1,4 +1,3 @@
-// Motor.h -- his motor physics, without the PID/Controller part
 #pragma once
 #include <bits/stdc++.h>
 
@@ -7,11 +6,11 @@ private:
     double speed;
     double inertia;
 
-    double SR(double x) {                 // signed square root (his)
+    double SR(double x) {
         if (x >= 0) return std::sqrt(x);
         return 0 - std::sqrt(-x);
     }
-    double NewSpeed(double P, double dt) {   // his formula, time -> dt
+    double NewSpeed(double P, double dt) {
         double s2  = speed * speed;
         double DE  = (2 * P * dt) / inertia;
         double NS2 = s2 + DE;
