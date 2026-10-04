@@ -1,0 +1,61 @@
+#ifndef MOTORCONTROLLER_H
+#define MOTORCONTROLLER_H
+
+#include <iostream>
+#include "output.h"
+using namespace std;
+
+class Controller{
+	private:
+		float Ki;
+		float Kd;
+		float Kp;
+	protected:
+		float time;   //time between measurements
+		Controller(float p, float i, float d, float t): Ki(i), Kd(d), Kp(p), time(t){}
+		double SumE;
+		double ep;
+		double GetP(double target, double sp, double in){
+			double e=target-sp;
+			double P=Kp*e+Ki*SumE+Kd*((e-ep)/time);
+			ep=e;
+			SumE+=e*time;
+			return P;
+		}       //Reference: https://industrialmonitordirect.com/blogs/knowledgebase/understanding-pid-control-kp-ki-kd-parameters-explained
+};
+
+class motor: public Controller{
+	private:
+		double speed;
+		double inertia;
+		double SR(double x){
+			if (x>=0) return sqrt(x);
+			return sqrt(-x);
+		}
+		double NewSpeed(double P){
+			double s2=speed*speed;
+			double DE=(2*P*time)/inertia;
+			double NS2=s2+DE;
+			if (NS2<0) return 0;
+			return SR(NS2);
+		}
+	public:
+		motor(double m, float p, float i, float d,float t): Controller(p,i,d,t), speed(0), inertia(m){}
+		void ChangeSpeed(double s, CSVOutput& csv, SimulationResult& result){
+			SumE=0;
+			ep=0;
+			double t=0;
+			while(s-speed>0.01 || speed-s>0.01){
+				double P=GetP(s,speed,inertia);
+				speed=NewSpeed(P);
+				csv.record(t, s, speed, P);
+				result.addReading(t, s, speed, P);
+				cout<<GetSpeed()<<endl;
+				t+=time;
+			}
+		}
+		double GetSpeed(){ return speed;}
+		double GetInertia(){ return inertia;}
+};
+
+#endif
