@@ -25,7 +25,6 @@ class motor: public Controller{
 	private:
 		double speed;
 		double inertia;
-		float load;
 		double f(double sp, double pow);
 		double SR(double x){
 			if (x>=0) return sqrt(x);
