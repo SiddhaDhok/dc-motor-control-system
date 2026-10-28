@@ -5,11 +5,9 @@
 #include "Controller.h"
 #include "Motor.h"
 #include "output.h"
-#include "MultithreadSimulation.h"   // change to your header's real name if it differs
+#include "MultithreadSimulation.h"
 using namespace std;
 
-// Builds the controller type asked for. Returns nullptr if the name is unknown.
-// The gains are the values we tested; change them here.
 unique_ptr<Controller> makeController(const string& type, Motor& motor) {
 	const double Kp = 1.5, Ki = 0.65, Kd = 0.75;
 
@@ -26,8 +24,6 @@ unique_ptr<Controller> makeController(const string& type, Motor& motor) {
 int main(int argc, char* argv[]){
 	const double target = 30;
 	const double dt = 1;
-
-	// Usage: ./sim [single|threaded] [p|i|d|pi|pd|id|pid] [run number]
 	string mode = (argc > 1) ? argv[1] : "single";
 	string type = (argc > 2) ? argv[2] : "pid";
 	string run  = (argc > 3) ? argv[3] : "";
@@ -49,9 +45,9 @@ int main(int argc, char* argv[]){
 	cout << "Mode: " << mode << ", controller: " << type << ", output: " << csvName << endl;
 
 	if (!threaded) {
-		const double tol = 0.02 * target;   // same +-2% band as settlingTime()
+		const double tol = 0.02 * target;
 		const int holdSteps = 20;
-		const int maxSteps = 5000;          // safety cap
+		const int maxSteps = 5000;
 
 		CSVOutput csv(csvName);
 		SimulationResult result;
