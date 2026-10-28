@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motor Response Viewer</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --text: #1b1f24;
+    --muted: #5d6673;
+    --border: #dde1e7;
+    --grid: #e8ebef;
+    --speed: #2563eb;
+    --target: #4b5563;
+    --power: #d97706;
+    --band: rgba(37, 99, 235, 0.09);
+    --accent: #2563eb;
+    --accent-text: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171b;
+      --card: #1c2025;
+      --text: #e8eaed;
+      --muted: #9aa3af;
+      --border: #2d333b;
+      --grid: #2a2f36;
+      --speed: #60a5fa;
+      --target: #9ca3af;
+      --power: #fbbf24;
+      --band: rgba(96, 165, 250, 0.12);
+      --accent: #3b82f6;
+      --accent-text: #ffffff;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .page { max-width: 980px; margin: 0 auto; padding: 24px 16px 40px; }
+  h1 { font-size: 22px; margin: 0 0 4px; font-weight: 650; }
+  .sub { color: var(--muted); margin: 0 0 18px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+  }
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center;
+    margin-bottom: 12px;
+  }
+  .controls label { color: var(--muted); font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+  button, select {
+    font: inherit; color: var(--text); background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); min-width: 92px; font-weight: 600; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .spacer { flex: 1; }
+  #chartWrap { width: 100%; position: relative; }
+  canvas { width: 100%; display: block; }
+  .scrub { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+  .scrub input[type=range] { flex: 1; accent-color: var(--accent); }
+  .readout {
+    font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; white-space: nowrap;
+  }
+  .readout b { color: var(--text); font-weight: 600; }
+  .grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px; margin-top: 12px;
+  }
+  .metric { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  .metric .k { color: var(--muted); font-size: 12px; }
+  .metric .v { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .metric .n { color: var(--muted); font-size: 11px; }
+  .drop {
+    margin-top: 12px; border: 1.5px dashed var(--border); border-radius: 10px;
+    padding: 12px; color: var(--muted); font-size: 13px; text-align: center;
+  }
+  .drop.over { border-color: var(--accent); color: var(--text); }
+  #msg { color: #b42318; min-height: 1.3em; font-size: 13px; margin-top: 6px; }
+  @media (prefers-color-scheme: dark) { #msg { color: #f87171; } }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .sw { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Motor Response Viewer</h1>
+  <p class="sub">Replays the latest simulation run as a live graph: target vs. motor speed over time.</p>
+
+  <div class="card">
+    <div class="controls">
+      <button id="play" class="primary" type="button">Play</button>
+      <button id="restart" type="button">Restart</button>
+      <label>Run
+        <select id="dataset" aria-label="Choose which run to show"></select>
+      </label>
+      <label>Speed
+        <select id="rate" aria-label="Playback speed">
+          <option value="0.5">0.5x</option>
+          <option value="1" selected>1x</option>
+          <option value="2">2x</option>
+          <option value="4">4x</option>
+        </select>
+      </label>
+      <span class="spacer"></span>
+      <label><input type="checkbox" id="showBand" checked> &plusmn;2% band</label>
+      <label><input type="checkbox" id="showPower"> Power</label>
+    </div>
+
+    <div class="legend" aria-hidden="true">
+      <span><i class="sw" style="background:var(--speed)"></i>Speed</span>
+      <span><i class="sw" style="background:var(--target)"></i>Target</span>
+      <span id="legPower" hidden><i class="sw" style="background:var(--power)"></i>Power (right axis)</span>
+    </div>
+
+    <div id="chartWrap">
+      <canvas id="chart" role="img" aria-label="Line chart of motor speed approaching the target speed over time"></canvas>
+    </div>
+
+    <div class="scrub">
+      <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Playback position">
+      <span class="readout" id="readout"></span>
+    </div>
+
+    <div class="grid" id="metrics"></div>
+
+    <div class="drop" id="drop">
+      Load your own run: drop a <b>sim_results.csv</b> here or
+      <label style="display:inline"><input type="file" id="file" accept=".csv,text/csv" style="display:none"><a href="#" id="pick" style="color:var(--accent)">choose a file</a></label>.
+      Columns needed: <code>time,target,speed,power</code>.
+    </div>
+    <div id="msg" role="status"></div>
+  </div>
+</div>
+
+<script id="core">
+// Pure logic (no DOM). Metric definitions match SimulationResult in output.h.
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  const head = lines[0].split(',').map(s => s.trim().toLowerCase());
+  const it = head.indexOf('time'), ig = head.indexOf('target'),
+        is = head.indexOf('speed'), ip = head.indexOf('power');
+  if (it < 0 || ig < 0 || is < 0) throw new Error('CSV needs time, target and speed columns.');
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const c = lines[i].split(',');
+    const t = parseFloat(c[it]), g = parseFloat(c[ig]), s = parseFloat(c[is]);
+    const p = ip >= 0 ? parseFloat(c[ip]) : 0;
+    if (isNaN(t) || isNaN(g) || isNaN(s)) continue;
+    rows.push({ t: t, target: g, speed: s, power: isNaN(p) ? 0 : p });
+  }
+  if (rows.length < 2) throw new Error('Not enough data rows in that file.');
+  return rows;
+}
+
+function metrics(rows, n) {
+  n = n || rows.length;
+  const target = rows[n - 1].target;
+  let peak = 0, peakT = 0;
+  for (let i = 0; i < n; i++) {
+    if (rows[i].speed > peak) { peak = rows[i].speed; peakT = rows[i].t; }
+  }
+  const overshoot = (target === 0 || peak <= target) ? 0 : (peak - target) / target * 100;
+  let settle = 0;
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(rows[i].speed - target) > 0.02 * Math.abs(target)) settle = rows[i].t;
+  }
+  const sse = target - rows[n - 1].speed;
+  let t10 = null, t90 = null;
+  for (let i = 0; i < n; i++) {
+    if (t10 === null && rows[i].speed >= 0.1 * target) t10 = rows[i].t;
+    if (t90 === null && rows[i].speed >= 0.9 * target) { t90 = rows[i].t; break; }
+  }
+  const rise = (t10 !== null && t90 !== null) ? t90 - t10 : null;
+  return { count: n, target: target, peak: peak, peakT: peakT,
+           overshoot: overshoot, settle: settle, sse: sse, rise: rise };
+}
+
+function idxAt(rows, pt) {
+  let lo = 0, hi = rows.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (rows[mid].t <= pt) lo = mid; else hi = mid - 1;
+  }
+  return lo;
+}
+
+function niceStep(range, count) {
+  const raw = range / count;
+  const p = Math.pow(10, Math.floor(Math.log10(raw)));
+  const f = raw / p;
+  const m = f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10;
+  return m * p;
+}
+</script>
+
+<script>
+// make_viewer.exe replaces the placeholder below with the contents of sim_results.csv
+const EMBEDDED = `__CSV__`;
+
+const $ = id => document.getElementById(id);
+const canvas = $('chart'), wrap = $('chartWrap');
+const S = { sets: {}, key: '', rows: [], pt: 0, playing: false, last: 0 };
+const PLAY_SECONDS = 10; // at 1x, any run replays in about this many seconds
+
+function fmt(v, d) {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  return Number(v).toFixed(d === undefined ? 2 : d);
+}
+
+function addSet(key, label, rows) {
+  S.sets[key] = { label: label, rows: rows };
+  const opt = document.createElement('option');
+  opt.value = key; opt.textContent = label;
+  $('dataset').appendChild(opt);
+}
+
+function select(key) {
+  S.key = key;
+  S.rows = S.sets[key].rows;
+  $('dataset').value = key;
+  S.pt = 0;
+  S.playing = true;
+  S.last = 0;
+  update();
+}
+
+function tMax() { return S.rows[S.rows.length - 1].t; }
+
+function showEmpty() {
+  const cssW = Math.max(280, wrap.clientWidth), cssH = 300, dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr);
+  canvas.style.height = cssH + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--muted').trim();
+  ctx.font = '15px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('No run loaded. Run the simulation, then load sim_results.csv below.', cssW / 2, cssH / 2);
+  $('metrics').innerHTML = ''; $('readout').textContent = '';
+  $('play').textContent = 'Play';
+}
+
+function update() {
+  if (!S.rows.length) { showEmpty(); return; }
+  const rows = S.rows, n = rows.length;
+  const i = idxAt(rows, S.pt);
+  const r = rows[i];
+  const finished = S.pt >= tMax();
+  $('play').textContent = finished ? 'Replay' : (S.playing ? 'Pause' : 'Play');
+  $('scrub').value = Math.round(1000 * Math.min(1, S.pt / tMax()));
+  $('readout').innerHTML = 't <b>' + fmt(Math.min(S.pt, tMax()), 2) + ' s</b> &nbsp; speed <b>' +
+    fmt(r.speed, 2) + '</b> &nbsp; error <b>' + fmt(r.target - r.speed, 2) + '</b>';
+  const m = metrics(rows, i + 1);
+  const cards = [
+    ['Peak speed', fmt(m.peak, 2), 'at ' + fmt(m.peakT, 2) + ' s'],
+    ['Overshoot', fmt(m.overshoot, 2) + ' %', 'peak past target'],
+    ['Rise time', m.rise === null ? '…' : fmt(m.rise, 2) + ' s', '10% to 90% of target'],
+    ['Settling time', finished ? fmt(m.settle, 2) + ' s' : '…', 'stays within ±2%'],
+    ['Steady-state error', finished ? fmt(m.sse, 3) : '…', 'target minus final speed'],
+    ['Samples', String(m.count) + ' / ' + n, 'rows replayed']
+  ];
+  $('metrics').innerHTML = cards.map(c =>
+    '<div class="metric"><div class="k">' + c[0] + '</div><div class="v">' + c[1] +
+    '</div><div class="n">' + c[2] + '</div></div>').join('');
+  $('legPower').hidden = !$('showPower').checked;
+  draw();
+}
+
+function draw() {
+  if (!S.rows.length) { showEmpty(); return; }
+  const rows = S.rows, n = rows.length;
+  const cssW = Math.max(280, wrap.clientWidth);
+  const cssH = Math.max(280, Math.min(440, Math.round(cssW * 0.5)));
+  const dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    canvas.style.height = cssH + 'px';
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  const cs = getComputedStyle(document.documentElement);
+  const col = name => cs.getPropertyValue(name).trim();
+  const showPower = $('showPower').checked;
+  const L = 54, R = showPower ? 58 : 16, T = 14, B = 38;
+  const pw = cssW - L - R, ph = cssH - T - B;
+
+  const target = rows[n - 1].target;
+  let maxSpeed = target, maxP = 0, minP = 0;
+  for (const r of rows) {
+    if (r.speed > maxSpeed) maxSpeed = r.speed;
+    if (r.power > maxP) maxP = r.power;
+    if (r.power < minP) minP = r.power;
+  }
+  const yMax = maxSpeed * 1.12, tEnd = tMax();
+  const X = t => L + (t / tEnd) * pw;
+  const Y = v => T + ph - (v / yMax) * ph;
+  const pSpan = (maxP - minP) || 1;
+  const YP = v => T + ph - ((v - minP) / pSpan) * ph;
+
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.lineWidth = 1;
+
+  // grid + y labels
+  const ys = niceStep(yMax, 5);
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let v = 0; v <= yMax + 1e-9; v += ys) {
+    ctx.strokeStyle = col('--grid');
+    ctx.beginPath(); ctx.moveTo(L, Y(v)); ctx.lineTo(L + pw, Y(v)); ctx.stroke();
+    ctx.fillStyle = col('--muted');
+    ctx.fillText(String(Math.round(v * 100) / 100), L - 8, Y(v));
+  }
+  // x ticks
+  const xs = niceStep(tEnd, 6);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (let t = 0; t <= tEnd + 1e-9; t += xs) {
+    ctx.strokeStyle = col('--grid');
+    ctx.beginPath(); ctx.moveTo(X(t), T); ctx.lineTo(X(t), T + ph); ctx.stroke();
+    ctx.fillStyle = col('--muted');
+    ctx.fillText(String(Math.round(t * 100) / 100), X(t), T + ph + 6);
+  }
+  ctx.fillStyle = col('--muted');
+  ctx.fillText('time (s)', L + pw / 2, cssH - 16);
+  ctx.save();
+  ctx.translate(14, T + ph / 2); ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('speed', 0, 0);
+  ctx.restore();
+
+  // power axis labels
+  if (showPower) {
+    const ps = niceStep(pSpan, 5);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = col('--power');
+    const start = Math.ceil(minP / ps) * ps;
+    for (let v = start; v <= maxP + 1e-9; v += ps) ctx.fillText(String(Math.round(v)), L + pw + 8, YP(v));
+  }
+
+  // tolerance band
+  if ($('showBand').checked) {
+    ctx.fillStyle = col('--band');
+    ctx.fillRect(L, Y(target * 1.02), pw, Y(target * 0.98) - Y(target * 1.02));
+  }
+  // target line
+  ctx.strokeStyle = col('--target'); ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath(); ctx.moveTo(L, Y(target)); ctx.lineTo(L + pw, Y(target)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // data up to playhead
+  const pt = Math.min(S.pt, tEnd);
+  const i = idxAt(rows, pt);
+  let hx = rows[i].t, hy = rows[i].speed, hp = rows[i].power;
+  if (i < n - 1) {
+    const f = (pt - rows[i].t) / (rows[i + 1].t - rows[i].t);
+    hy = rows[i].speed + f * (rows[i + 1].speed - rows[i].speed);
+    hp = rows[i].power + f * (rows[i + 1].power - rows[i].power);
+    hx = pt;
+  }
+  if (showPower) {
+    ctx.strokeStyle = col('--power'); ctx.lineWidth = 1.25; ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    for (let k = 0; k <= i; k++) { const x = X(rows[k].t), y = YP(rows[k].power); if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+    ctx.lineTo(X(hx), YP(hp));
+    ctx.stroke(); ctx.globalAlpha = 1;
+  }
+  ctx.strokeStyle = col('--speed'); ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let k = 0; k <= i; k++) { const x = X(rows[k].t), y = Y(rows[k].speed); if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+  ctx.lineTo(X(hx), Y(hy));
+  ctx.stroke();
+
+  // peak marker once passed, if there is visible overshoot
+  const m = metrics(rows, i + 1);
+  if (m.overshoot > 0.5) {
+    ctx.fillStyle = col('--speed');
+    ctx.beginPath(); ctx.arc(X(m.peakT), Y(m.peak), 4, 0, Math.PI * 2); ctx.fill();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+    ctx.fillText('peak ' + fmt(m.peak, 1), X(m.peakT) + 8, Y(m.peak) - 4);
+  }
+  // playhead dot
+  ctx.fillStyle = col('--speed');
+  ctx.beginPath(); ctx.arc(X(hx), Y(hy), 5, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = col('--bg'); ctx.lineWidth = 2; ctx.stroke();
+}
+
+function frame(ts) {
+  if (S.playing) {
+    if (S.last) {
+      const dt = (ts - S.last) / 1000;
+      S.pt += dt * (tMax() / PLAY_SECONDS) * parseFloat($('rate').value);
+      if (S.pt >= tMax()) { S.pt = tMax(); S.playing = false; }
+      update();
+    }
+    S.last = ts;
+  } else {
+    S.last = 0;
+  }
+  requestAnimationFrame(frame);
+}
+
+function togglePlay() {
+  if (!S.rows.length) return;
+  if (S.pt >= tMax()) { S.pt = 0; S.playing = true; }
+  else S.playing = !S.playing;
+  S.last = 0;
+  update();
+}
+
+function loadText(name, text) {
+  try {
+    const rows = parseCSV(text);
+    const key = 'file:' + name;
+    if (S.sets[key]) { S.sets[key].rows = rows; } else { addSet(key, 'Loaded: ' + name, rows); }
+    $('msg').textContent = '';
+    select(key);
+  } catch (e) {
+    $('msg').textContent = e.message;
+  }
+}
+
+function readFile(f) {
+  if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => loadText(f.name, String(rd.result));
+  rd.readAsText(f);
+}
+
+// wiring
+let hasRun = false;
+if (EMBEDDED.trim().indexOf('time') === 0) {
+  try { addSet('run', 'Latest run (sim_results.csv)', parseCSV(EMBEDDED)); hasRun = true; }
+  catch (e) { $('msg').textContent = e.message; }
+}
+$('play').addEventListener('click', togglePlay);
+$('restart').addEventListener('click', () => { if (!S.rows.length) return; S.pt = 0; S.playing = true; S.last = 0; update(); });
+$('dataset').addEventListener('change', e => select(e.target.value));
+$('showBand').addEventListener('change', update);
+$('showPower').addEventListener('change', update);
+$('scrub').addEventListener('input', e => { if (!S.rows.length) return; S.pt = tMax() * (e.target.value / 1000); S.playing = false; update(); });
+$('pick').addEventListener('click', e => { e.preventDefault(); $('file').click(); });
+$('file').addEventListener('change', e => readFile(e.target.files[0]));
+const drop = $('drop');
+['dragenter', 'dragover'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+document.addEventListener('drop', e => readFile(e.dataTransfer.files[0]));
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && e.target.tagName !== 'SELECT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT') { e.preventDefault(); togglePlay(); }
+});
+if (window.ResizeObserver) new ResizeObserver(() => draw()).observe(wrap);
+window.addEventListener('resize', draw);
+
+if (hasRun) select('run'); else update();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
